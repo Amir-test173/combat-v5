@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: world-dominion-server
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: MAX_PLAYERS
+        value: 64
+      - key: MAX_ROOMS
+        value: 500
+      - key: MIN_PLAYERS_TO_START
+        value: 2
+      - key: TURN_SECONDS
+        value: 300
+      - key: ROOM_TTL_MINUTES
+        value: 1440
+      - key: DATA_RETENTION_DAYS
+        value: 90
+# Add DATABASE_URL, ADMIN_KEY, DEVELOPER_NAME and SUPPORT_EMAIL as Environment Variables in Render.
+# DATABASE_URL and ADMIN_KEY should be secret values.

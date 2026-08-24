@@ -1,0 +1,68 @@
+{
+  "ruleset": "1.8.0-parity-1",
+  "protocol": 9,
+  "purpose": "Critical deterministic rule vectors shared by offline Flutter tests and authoritative Node server tests.",
+  "attackPlanPower": {
+    "cautious": 0.9,
+    "balanced": 1.0,
+    "breakthrough": 1.22
+  },
+  "attackPlanCost": {
+    "cautious": 0.86,
+    "balanced": 1.0,
+    "breakthrough": 1.28
+  },
+  "battleLossCases": [
+    {
+      "ratio": 1.0,
+      "wonRound": true,
+      "attacker": 0.06,
+      "defender": 0.13
+    },
+    {
+      "ratio": 0.7,
+      "wonRound": false,
+      "attacker": 0.136,
+      "defender": 0.08
+    }
+  ],
+  "frontlineCases": [
+    {
+      "ratio": 1.0,
+      "plan": "balanced",
+      "encircled": false,
+      "airEdge": 0.0,
+      "navalEdge": 0.0,
+      "random": 0.0,
+      "delta": 19.76
+    },
+    {
+      "ratio": 1.1,
+      "plan": "breakthrough",
+      "encircled": true,
+      "airEdge": 0.4,
+      "navalEdge": 0.2,
+      "random": 0.0,
+      "delta": 43.76
+    }
+  ],
+  "movementCase": {
+    "province": {
+      "terrain": "plains",
+      "weather": "clear",
+      "landCover": "grassland",
+      "elevationM": 50,
+      "reliefM": 20,
+      "roads": 4,
+      "rail": 3,
+      "logisticsLevel": 2,
+      "infrastructure": 85,
+      "roadDensity": 90,
+      "railDensity": 10
+    },
+    "distanceKm": 500,
+    "fuelCost": 2,
+    "supplyLoss": 4,
+    "routeEfficiency": 1.311
+  }
+}

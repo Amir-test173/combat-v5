@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>World Dominion Privacy Policy</title><style>body{font-family:system-ui,sans-serif;max-width:820px;margin:40px auto;padding:0 20px;line-height:1.65;color:#17212b}h1,h2{line-height:1.2}code{background:#eef2f4;padding:2px 5px;border-radius:4px}</style></head><body>
+<h1>World Dominion Privacy Policy</h1><p><strong>Effective:</strong> 24 August 2026</p>
+<p>This privacy policy applies to <strong>World Dominion</strong>, provided by <strong>{{DEVELOPER_NAME}}</strong>.</p>
+<h2>Data processed</h2><ul>
+<li>A randomly generated guest player identifier and a recovery-token hash used to restore a room session.</li>
+<li>A pseudonymous installation identifier. The server stores only its hash and uses it for abuse prevention and moderation.</li>
+<li>Your chosen display name, selected country, room code, readiness state and authoritative gameplay state.</li>
+<li>Optional room passwords are not stored in plain text; the server stores a salted one-way verifier.</li>
+<li>Abuse reports may contain the reporter identifier, reported player identifier/display name, the reported installation hash, a fixed report category, status and timestamps.</li>
+<li>Hosting/database providers may process ordinary network metadata such as IP address and request logs as part of operating and securing the service.</li>
+</ul>
+<h2>Purposes</h2><p>We process these data to create and restore multiplayer rooms, synchronize authoritative game state, operate turn timers, investigate abuse reports, enforce bans, prevent cheating and keep the service secure.</p>
+<h2>Sharing</h2><p>The release candidate contains no advertising or analytics SDK. We do not sell user data. Data may be processed by the infrastructure providers used to host the game server and database only as needed to provide and secure the service.</p>
+<h2>Security</h2><p>Production clients require encrypted <code>wss://</code> WebSocket connections. Recovery tokens, installation identifiers and room passwords are not stored in plain text on the server. Access to administrative moderation endpoints is protected by a server-side admin secret. No system can be guaranteed perfectly secure.</p>
+<h2>Retention and deletion</h2><p>Inactive room data is configured to expire after the server retention period (90 days by default). A player can delete their guest identity for the current room from the in-app Privacy screen. Gameplay ownership is then returned to AI control and ordinary room data tied directly to that guest identity is removed. Limited abuse-prevention records, such as a pseudonymous ban hash, may be retained when reasonably necessary to protect the service and other users.</p>
+<p>Deletion instructions are also available at <code>/delete-data</code> on the official game server.</p>
+<h2>Children</h2><p>The service is not specifically directed to children. The developer must configure the final Google Play target audience and content rating accurately before public release.</p>
+<h2>Contact</h2><p>Developer: <strong>{{DEVELOPER_NAME}}</strong><br>Privacy/support contact: <strong>{{SUPPORT_EMAIL}}</strong></p>
+</body></html>

@@ -1,0 +1,28 @@
+name: world_dominion
+publish_to: 'none'
+description: Strategic world conquest game with authoritative multiplayer, economy, diplomacy and field warfare.
+version: 1.8.0+180
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.5.3
+  countries_world_map: ^1.3.0
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/world_game_data.json
+    - assets/province_map.json
+    - assets/transport_map.json
+    - assets/geodata_manifest.json
+    - assets/mode_parity_contract.json

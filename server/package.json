@@ -1,0 +1,17 @@
+{
+  "name": "world-dominion-server",
+  "version": "1.8.0-clean-build-parity",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check index.js && node --check world_seed.js && node --check combat_rules.js && node --check realism_rules.js && node --check fog_rules.js && node --check advanced_rules.js && node --check naval_rules.js && node --test seed_test.js combat_rules_test.js provinces_recruitment_test.js realism_rules_test.js fog_rules_test.js advanced_rules_test.js naval_rules_test.js mode_parity_test.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3",
+    "ws": "^8.18.3"
+  }
+}
