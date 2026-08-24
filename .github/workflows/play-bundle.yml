@@ -1,0 +1,112 @@
+name: Build signed Google Play AAB
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.1'
+  JAVA_VERSION: '17'
+
+jobs:
+  play-aab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Restore omitted Gradle wrapper binary only
+        shell: bash
+        run: |
+          test -f android/gradlew
+          test -f android/gradle/wrapper/gradle-wrapper.properties
+          if [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
+            flutter create /tmp/wd_scaffold --platforms=android --project-name world_dominion --org com.worlddominion
+            cp /tmp/wd_scaffold/android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.jar
+          fi
+          chmod +x android/gradlew
+          grep -q 'gradle-8.14.3-bin.zip' android/gradle/wrapper/gradle-wrapper.properties
+      - name: Verify clean source
+        run: python tool/check_clean_source.py
+      - name: Require Play signing secrets
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing ANDROID_KEYSTORE_BASE64" && exit 1)
+          test -n "$ANDROID_KEY_ALIAS" || (echo "Missing ANDROID_KEY_ALIAS" && exit 1)
+          test -n "$ANDROID_KEY_PASSWORD" || (echo "Missing ANDROID_KEY_PASSWORD" && exit 1)
+          test -n "$ANDROID_STORE_PASSWORD" || (echo "Missing ANDROID_STORE_PASSWORD" && exit 1)
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+      - name: Require production configuration
+        shell: bash
+        env:
+          DEFAULT_SERVER_URL: ${{ vars.DEFAULT_SERVER_URL }}
+          PRIVACY_POLICY_URL: ${{ vars.PRIVACY_POLICY_URL }}
+          SUPPORT_EMAIL: ${{ vars.SUPPORT_EMAIL }}
+        run: |
+          [[ "$DEFAULT_SERVER_URL" == wss://* ]] || (echo "DEFAULT_SERVER_URL must be a public wss:// URL" && exit 1)
+          [[ "$PRIVACY_POLICY_URL" == https://* ]] || (echo "PRIVACY_POLICY_URL must be a public https:// URL" && exit 1)
+          [[ "$SUPPORT_EMAIL" == *@*.* ]] || (echo "SUPPORT_EMAIL is missing or invalid" && exit 1)
+      - name: Build world administrative dataset
+        run: python tool/fetch_world_data.py
+      - name: Install physical geodata tools
+        run: python -m pip install --disable-pip-version-check rasterio shapely pyproj requests pmtiles==3.7.0 mapbox-vector-tile==2.2.0 zstandard
+      - name: Unit-test strategic transport pipeline
+        run: cd tool && python -m unittest -v test_transport_pipeline.py
+      - name: Enrich real elevation land cover and Overture transport
+        env:
+          WD_GEO_WORKERS: '8'
+          WD_REQUIRE_REAL_GEO: '1'
+          WD_REQUIRE_REAL_TRANSPORT: '1'
+          WD_TRANSPORT_SOURCE: 'overture'
+          WD_TRANSPORT_ZOOM: '9'
+          WD_OVERTURE_RELEASE: '2026-06-17.0'
+          WD_RASTER_SAMPLES: '3'
+        run: python tool/fetch_physical_world.py
+      - name: Show geodata coverage
+        run: cat assets/geodata_manifest.json
+      - name: Flutter pub get
+        run: flutter pub get
+      - name: Flutter analyze
+        run: flutter analyze
+      - name: Flutter tests
+        run: flutter test
+      - name: Build signed AAB
+        env:
+          DEFAULT_SERVER_URL: ${{ vars.DEFAULT_SERVER_URL }}
+          PRIVACY_POLICY_URL: ${{ vars.PRIVACY_POLICY_URL }}
+          SUPPORT_EMAIL: ${{ vars.SUPPORT_EMAIL }}
+        run: >-
+          flutter build appbundle --release
+          --dart-define=DEFAULT_SERVER_URL="$DEFAULT_SERVER_URL"
+          --dart-define=PRIVACY_POLICY_URL="$PRIVACY_POLICY_URL"
+          --dart-define=SUPPORT_EMAIL="$SUPPORT_EMAIL"
+      - name: Upload signed AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-dominion-1.8.0-clean-build-parity-play-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
