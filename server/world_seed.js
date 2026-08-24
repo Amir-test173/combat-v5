@@ -55,6 +55,12 @@ const rows = [
 ];
 const coastal = new Set(['ARE', 'ARG', 'AUS', 'BGD', 'BRA', 'CAN', 'CHN', 'DZA', 'EGY', 'ESP', 'FRA', 'GBR', 'GEO', 'IDN', 'IND', 'IRN', 'ISR', 'ITA', 'JPN', 'KOR', 'LBN', 'MAR', 'MEX', 'MMR', 'MYS', 'OMN', 'PAK', 'PRK', 'SAU', 'SYR', 'THA', 'TUR', 'USA', 'YEM']);
 
+// Prefer the generated real-world coastal classification. Keep the original set as
+// a backward-compatible fallback when the full world dataset is unavailable.
+function isCoastalCountry(id) {
+  return WORLD_COASTAL.has(id) || coastal.has(id);
+}
+
 function countryState([id,pop,food,water,fuel,power,steel,money]) {
   return {
     id, controller:`AI:${id}`, population:pop, stability:72, approval:64,
@@ -67,7 +73,7 @@ function countryState([id,pop,food,water,fuel,power,steel,money]) {
       airDefense:Math.max(1,Math.min(3,Math.round((power+money)/18))),
       aircraft:Math.max(1,Math.min(4,Math.round((power+money)/12))),
       helicopters:(power+money)>=28?1:0,drones:1,recon:1,
-      navy:coastal.has(id)?Math.max(1,Math.min(3,Math.round((fuel+money)/14))):0
+      navy:isCoastalCountry(id)?Math.max(1,Math.min(3,Math.round((fuel+money)/14))):0
     },
     solar:0,nuclear:0,grid:1,farms:1,foodFactories:1,civilianIndustry:1,militaryIndustry:1,
     airBases:0,navalBases:0,supplyHubs:1,trainingCamps:0,borderDefense:0,recruitedThisTurn:0,supply:72,morale:70,intelligence:20,resistance:0,
@@ -86,7 +92,7 @@ function sitesFor(row) {
     {id:`${id}_SUP`,countryId:id,name:'مركز الإمداد',kind:'supply',dx:.012,dy:-.014,health:100,level:1},
     {id:`${id}_AIR`,countryId:id,name:'القاعدة الجوية',kind:'airport',dx:-.013,dy:-.014,health:100,level:1},
   ];
-  if(coastal.has(id)) xs.push({id:`${id}_PRT`,countryId:id,name:'الميناء الرئيسي',kind:'port',dx:.020,dy:.002,health:100,level:1});
+  if(isCoastalCountry(id)) xs.push({id:`${id}_PRT`,countryId:id,name:'الميناء الرئيسي',kind:'port',dx:.020,dy:.002,health:100,level:1});
   return xs;
 }
 
