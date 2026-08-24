@@ -39,7 +39,6 @@ void main() {
     game.dispose();
   });
 
-
   test('frontline combat math is gradual and bounded', () {
     final even = frontlineProgressDelta(1, randomFactor: 0);
     final strong = frontlineProgressDelta(1.5, plan: 'breakthrough', encircled: true, randomFactor: 0);
@@ -95,6 +94,11 @@ void main() {
     final game = GameState();
     await game.choose('USA');
     game.me.missileProgram = 2;
+    // Modern saves keep typed missile inventory authoritative. missileStock is the
+    // compatibility total and must equal the sum of the typed inventories.
+    game.me.cruiseMissiles = 3;
+    game.me.ballisticMissiles = 0;
+    game.me.hypersonicMissiles = 0;
     game.me.missileStock = 3;
     game.me.electronicWarfare = 1;
     game.me.satelliteRecon = 2;
@@ -104,6 +108,7 @@ void main() {
     final restored = GameState(); restored.applySnapshot(game.snapshot());
     expect(restored.me.missileProgram, 2);
     expect(restored.me.missileStock, 3);
+    expect(restored.me.cruiseMissiles, 3);
     expect(restored.me.airReadiness, 83);
     final rp = restored.provinces.firstWhere((x) => x.id == p.id);
     expect(rp.terrain, 'mountains'); expect(rp.weather, 'snow'); expect(rp.roads, 3); expect(rp.rail, 2);
@@ -111,6 +116,32 @@ void main() {
     game.dispose(); restored.dispose();
   });
 
+  test('legacy missileStock-only saves migrate into cruise missiles without data loss', () async {
+    final game = GameState();
+    await game.choose('USA');
+    game.me.missileProgram = 2;
+    game.me.missileStock = 4;
+    final snapshot = game.snapshot();
+    final countryMap = Map<String,dynamic>.from(snapshot['countries'] as Map);
+    final usa = Map<String,dynamic>.from(countryMap['USA'] as Map);
+    // v1.5-era saves did not have typed missile fields. Removing them here tests
+    // the real backward-compatibility path instead of creating a mixed-format save.
+    usa.remove('cruiseMissiles');
+    usa.remove('ballisticMissiles');
+    usa.remove('hypersonicMissiles');
+    usa['missileStock'] = 4;
+    countryMap['USA'] = usa;
+    snapshot['countries'] = countryMap;
+
+    final restored = GameState();
+    restored.humanCountry = 'USA';
+    restored.applySnapshot(snapshot);
+    expect(restored.me.missileStock, 4);
+    expect(restored.me.cruiseMissiles, 4);
+    expect(restored.me.ballisticMissiles, 0);
+    expect(restored.me.hypersonicMissiles, 0);
+    game.dispose(); restored.dispose();
+  });
 
   test('v1.6 carrier task force extends air reach and survives snapshot round-trip', () async {
     final game = GameState();
@@ -150,7 +181,6 @@ void main() {
     expect(rp.physicalDataQuality, 'real_multi'); expect(rp.transportDataQuality, 'overture_strategic_z9');
     game.dispose(); restored.dispose();
   });
-
 
   test('v1.7 movement estimate uses physical route quality', () async {
     final game = GameState(); await game.choose('FRA');
