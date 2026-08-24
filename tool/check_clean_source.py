@@ -46,6 +46,10 @@ for pattern,label in [
 ]:
     if re.search(pattern,ci,re.I): fail(label)
 if not re.search(r'permissions:\s*\n\s*contents:\s*read',ci): fail('CI permissions are not minimal read-only contents')
+if 'WD_PROBE_TRANSPORT_ONLY' not in ci: fail('CI does not preflight Overture before expensive raster enrichment')
+if 'WD_OVERTURE_FALLBACK_RELEASES' not in ci: fail('CI lacks pinned real Overture PMTiles fallback releases')
+physical=text('tool/fetch_physical_world.py')
+if 'resolve_overture_pmtiles' not in physical or 'probe_pmtiles' not in physical: fail('Overture PMTiles preflight/fallback resolver is missing')
 
 # Client/server compatibility contract.
 app_protocol=re.search(r"const kProtocolVersion=(\d+);",main)

@@ -1,5 +1,8 @@
 import math
 import unittest
+from unittest.mock import patch
+
+import fetch_physical_world as physical
 
 from transport_pipeline import (
     is_strategic_transport,
@@ -43,6 +46,36 @@ class TransportPipelineTests(unittest.TestCase):
         self.assertEqual(len(ranges), 2)
         covered = sum((x1-x0+1)*(y1-y0+1) for x0,x1,y0,y1 in ranges)
         self.assertLess(covered, 200)
+
+    def test_overture_pmtiles_url_is_canonical(self):
+        self.assertEqual(
+            physical.overture_pm_url('2026-05-20.0'),
+            'https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/2026-05-20.0/transportation.pmtiles',
+        )
+
+    def test_overture_resolver_falls_back_to_previous_real_release(self):
+        old_url=physical.RESOLVED_OVERTURE_PM
+        old_release=physical.RESOLVED_OVERTURE_RELEASE
+        old_override=physical.OVERTURE_PM_OVERRIDE
+        old_requested=physical.OVERTURE_RELEASE
+        old_fallbacks=physical.OVERTURE_FALLBACK_RELEASES
+        try:
+            physical.RESOLVED_OVERTURE_PM=None
+            physical.RESOLVED_OVERTURE_RELEASE=None
+            physical.OVERTURE_PM_OVERRIDE=''
+            physical.OVERTURE_RELEASE='2026-06-17.0'
+            physical.OVERTURE_FALLBACK_RELEASES=('2026-05-20.0','2026-04-15.0')
+            with patch.object(physical,'probe_pmtiles',side_effect=[(False,'HTTP 404'),(True,'HTTP 206')]) as probe:
+                url,release=physical.resolve_overture_pmtiles()
+            self.assertEqual(release,'2026-05-20.0')
+            self.assertTrue(url.endswith('/2026-05-20.0/transportation.pmtiles'))
+            self.assertEqual(probe.call_count,2)
+        finally:
+            physical.RESOLVED_OVERTURE_PM=old_url
+            physical.RESOLVED_OVERTURE_RELEASE=old_release
+            physical.OVERTURE_PM_OVERRIDE=old_override
+            physical.OVERTURE_RELEASE=old_requested
+            physical.OVERTURE_FALLBACK_RELEASES=old_fallbacks
 
 
 if __name__ == '__main__':

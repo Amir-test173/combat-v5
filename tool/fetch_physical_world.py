@@ -22,6 +22,8 @@ import os
 import pathlib
 import statistics
 import urllib.request
+import urllib.error
+import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -46,10 +48,18 @@ NE_ROADS = f'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/{NE_
 WORLD_COVER_BASE = 'https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map'
 COP90_BASE = 'https://copernicus-dem-90m.s3.eu-central-1.amazonaws.com'
 OVERTURE_RELEASE = os.environ.get('WD_OVERTURE_RELEASE', '2026-06-17.0').strip()
-OVERTURE_PM = os.environ.get(
-    'WD_OVERTURE_PM_URL',
-    f'https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles/{OVERTURE_RELEASE}/transportation.pmtiles',
-).strip()
+OVERTURE_FALLBACK_RELEASES = tuple(
+    x.strip() for x in os.environ.get('WD_OVERTURE_FALLBACK_RELEASES', '2026-05-20.0,2026-04-15.0').split(',') if x.strip()
+)
+OVERTURE_PM_OVERRIDE = os.environ.get('WD_OVERTURE_PM_URL', '').strip()
+OVERTURE_PM_BASE = os.environ.get(
+    'WD_OVERTURE_PM_BASE',
+    'https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles',
+).rstrip('/')
+OVERTURE_PROBE_RETRIES = max(1, min(5, int(os.environ.get('WD_OVERTURE_PROBE_RETRIES', '3') or 3)))
+OVERTURE_PROBE_TIMEOUT = max(5, min(60, int(os.environ.get('WD_OVERTURE_PROBE_TIMEOUT', '20') or 20)))
+RESOLVED_OVERTURE_PM = None
+RESOLVED_OVERTURE_RELEASE = None
 TRANSPORT_ZOOM = max(4, min(12, int(os.environ.get('WD_TRANSPORT_ZOOM', '9') or 9)))
 TRANSPORT_SOURCE = os.environ.get('WD_TRANSPORT_SOURCE', 'overture').strip().lower()
 RASTER_SAMPLES = max(1, min(7, int(os.environ.get('WD_RASTER_SAMPLES', '3') or 3)))
@@ -71,6 +81,79 @@ LANDCOVER = {
     90: 'wetland', 95: 'mangroves', 100: 'moss_lichen',
 }
 ROAD_CLASSES = ('motorway','trunk','primary','secondary')
+
+
+def overture_pm_url(release: str) -> str:
+    return f'{OVERTURE_PM_BASE}/{release}/transportation.pmtiles'
+
+
+def probe_pmtiles(url: str) -> tuple[bool, str]:
+    """Fast, dependency-free PMTiles availability probe.
+
+    Overture release notes document the public S3 directory, but an individual
+    release artifact can occasionally be late or unavailable. Probe the first
+    PMTiles header bytes before spending ~15 minutes on global raster enrichment.
+    """
+    headers={
+        'User-Agent':'World-Dominion-Build/1.8.1',
+        'Accept-Encoding':'identity',
+        'Range':'bytes=0-126',
+    }
+    last='unknown error'
+    for attempt in range(1, OVERTURE_PROBE_RETRIES+1):
+        try:
+            req=urllib.request.Request(url,headers=headers)
+            with urllib.request.urlopen(req,timeout=OVERTURE_PROBE_TIMEOUT) as r:
+                data=r.read(127)
+                status=getattr(r,'status',200)
+                if status not in (200,206):
+                    last=f'HTTP {status}'
+                elif len(data) < 127:
+                    last=f'short header ({len(data)} bytes)'
+                elif data[:7] != b'PMTiles':
+                    last='response is not a PMTiles v3 archive'
+                else:
+                    return True, f'HTTP {status}'
+        except urllib.error.HTTPError as e:
+            last=f'HTTP {e.code}'
+            if e.code == 404:
+                break
+        except Exception as e:
+            last=f'{type(e).__name__}: {e}'
+        if attempt < OVERTURE_PROBE_RETRIES:
+            time.sleep(min(4, attempt))
+    return False,last
+
+
+def resolve_overture_pmtiles() -> tuple[str|None, str|None]:
+    """Resolve a real Overture Transportation PMTiles artifact.
+
+    Prefer the pinned release. If that release's optional PMTiles artifact is
+    missing, fall back to the nearest explicitly pinned prior Overture release
+    rather than silently switching to Natural Earth. The actual release used is
+    recorded in geodata_manifest.json.
+    """
+    global RESOLVED_OVERTURE_PM, RESOLVED_OVERTURE_RELEASE
+    if RESOLVED_OVERTURE_PM:
+        return RESOLVED_OVERTURE_PM, RESOLVED_OVERTURE_RELEASE
+    candidates=[]
+    if OVERTURE_PM_OVERRIDE:
+        candidates.append(('override',OVERTURE_PM_OVERRIDE))
+    else:
+        seen=set()
+        for release in (OVERTURE_RELEASE,*OVERTURE_FALLBACK_RELEASES):
+            if release and release not in seen:
+                seen.add(release);candidates.append((release,overture_pm_url(release)))
+    for release,url in candidates:
+        ok,why=probe_pmtiles(url)
+        print(f'Overture PMTiles preflight {release}: {why}')
+        if ok:
+            RESOLVED_OVERTURE_PM=url
+            RESOLVED_OVERTURE_RELEASE=OVERTURE_RELEASE if release=='override' else release
+            if RESOLVED_OVERTURE_RELEASE != OVERTURE_RELEASE:
+                print(f'warning: requested Overture {OVERTURE_RELEASE} PMTiles unavailable; using real Transportation PMTiles {RESOLVED_OVERTURE_RELEASE}')
+            return RESOLVED_OVERTURE_PM,RESOLVED_OVERTURE_RELEASE
+    return None,None
 
 
 def load_json(path: pathlib.Path):
@@ -301,30 +384,38 @@ def sample_rasters(world, province_rows):
 
 
 class HTTPRangeSource:
-    """Synchronous HTTP Range source for the tiny PMTiles Python Reader API."""
+    """Synchronous HTTP Range source with bounded retries for public PMTiles."""
     def __init__(self,url):
         import requests
         self.url=url;self.session=requests.Session();self.cache={}
-        self.headers={'User-Agent':'World-Dominion-Build/1.7','Accept-Encoding':'identity'}
+        self.headers={'User-Agent':'World-Dominion-Build/1.8.1','Accept-Encoding':'identity'}
+    def _get(self,start,length,timeout):
+        last=None
+        for attempt in range(1,4):
+            try:
+                r=self.session.get(self.url,headers={**self.headers,'Range':f'bytes={start}-{start+length-1}'},timeout=timeout)
+                if r.status_code in (200,206):
+                    data=r.content
+                    if r.status_code==200 and len(data)>length:data=data[start:start+length]
+                    if len(data)==length:return data
+                    last=RuntimeError(f'PMTiles short range {len(data)} != {length}')
+                elif r.status_code==404:
+                    raise RuntimeError(f'PMTiles HTTP 404 for {self.url}')
+                else:
+                    last=RuntimeError(f'PMTiles HTTP {r.status_code}')
+            except Exception as e:
+                last=e
+                if '404' in str(e):raise
+            if attempt<3:time.sleep(attempt)
+        raise last or RuntimeError('PMTiles range request failed')
     def __call__(self,offset,length):
         key=(int(offset),int(length))
         if key in self.cache:return self.cache[key]
-        start,end=key[0],key[0]+key[1]-1
-        r=self.session.get(self.url,headers={**self.headers,'Range':f'bytes={start}-{end}'},timeout=90)
-        if r.status_code not in (200,206):raise RuntimeError(f'PMTiles HTTP {r.status_code}')
-        data=r.content
-        if r.status_code==200 and len(data)>key[1]:data=data[start:start+key[1]]
-        if len(data)!=key[1]:raise RuntimeError(f'PMTiles short range {len(data)} != {key[1]}')
+        data=self._get(key[0],key[1],90)
         if key[1] <= 512000:self.cache[key]=data
         return data
     def batch(self,start,length):
-        start=int(start);length=int(length)
-        r=self.session.get(self.url,headers={**self.headers,'Range':f'bytes={start}-{start+length-1}'},timeout=120)
-        if r.status_code not in (200,206):raise RuntimeError(f'PMTiles HTTP {r.status_code}')
-        data=r.content
-        if r.status_code==200 and len(data)>length:data=data[start:start+length]
-        if len(data)!=length:raise RuntimeError(f'PMTiles short batch {len(data)} != {length}')
-        return data
+        return self._get(int(start),int(length),120)
 
 
 def decompress_tile(data,compression):
@@ -390,7 +481,9 @@ def enrich_transport_overture(world,province_rows):
     selected=strategic_tile_ids(province_rows,TRANSPORT_ZOOM)
     if not selected:raise RuntimeError('no strategic Overture tiles intersect Admin-1 geometries')
     print(f'Overture transportation: selected {len(selected)} z{TRANSPORT_ZOOM} land tiles')
-    source=HTTPRangeSource(OVERTURE_PM)
+    url,release=resolve_overture_pmtiles()
+    if not url:raise RuntimeError('no real Overture Transportation PMTiles release passed preflight')
+    source=HTTPRangeSource(url)
     header,entries=tile_entries_for_ids(source,set(selected.values()))
     if not entries:raise RuntimeError('Overture PMTiles returned no selected tile entries')
     id_to_xy={tid:xy for xy,tid in selected.items()}
@@ -472,7 +565,7 @@ def enrich_transport_overture(world,province_rows):
         r['roadDensity']=round(r['actualRoadKm']/area*1000,2);r['railDensity']=round(r['actualRailKm']/area*1000,2)
         r['transportDataQuality']=f'overture_strategic_z{TRANSPORT_ZOOM}';real_regions+=1;total_road+=r['actualRoadKm'];total_rail+=r['actualRailKm']
         for _,line in sorted(render.get(key,[]),key=lambda x:x[0],reverse=True)[:MAX_RENDER_PER_PROVINCE]:country_lines[item['country']].append(line)
-    payload={'version':3,'source':'Overture Maps Transportation','release':OVERTURE_RELEASE,'zoom':TRANSPORT_ZOOM,'network':'motorway+trunk+primary+secondary+rail','countries':dict(country_lines)}
+    payload={'version':3,'source':'Overture Maps Transportation','release':release,'zoom':TRANSPORT_ZOOM,'network':'motorway+trunk+primary+secondary+rail','countries':dict(country_lines)}
     TRANSPORT_PATH.write_text(json.dumps(payload,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
     return {'real':True,'source':'overture','regions':real_regions,'tiles':tile_count,'features':feature_count,'renderLines':sum(len(v) for v in country_lines.values()),'roadKm':round(total_road,1),'railKm':round(total_rail,1)}
 
@@ -532,6 +625,16 @@ def main():
             r.setdefault('actualRoadKm',0.0);r.setdefault('actualRailKm',0.0);r.setdefault('roadDensity',0.0);r.setdefault('railDensity',0.0);r.setdefault('roadClassKm',{});r.setdefault('railClassKm',{})
             r.setdefault('physicalDataQuality','fallback');r.setdefault('transportDataQuality','fallback')
     province_rows=build_province_index(world,shapes)
+    # Resolve transport first: a missing optional PMTiles artifact must fail/fallback
+    # in seconds, not after global DEM/WorldCover sampling has already run.
+    if not SKIP_TRANSPORT and TRANSPORT_SOURCE=='overture':
+        url,release=resolve_overture_pmtiles()
+        if os.environ.get('WD_PROBE_TRANSPORT_ONLY','').lower() in {'1','true','yes'}:
+            if not url:raise SystemExit('No real Overture Transportation PMTiles artifact passed preflight')
+            print(json.dumps({'transportUrl':url,'transportRelease':release},ensure_ascii=False))
+            return
+        if REQUIRE_REAL_TRANSPORT and not url:
+            raise SystemExit('WD_REQUIRE_REAL_TRANSPORT=1 but no real Overture Transportation PMTiles artifact passed preflight')
     elev_ok,cover_ok,elev_samples,cover_samples=sample_rasters(world,province_rows)
     transport=enrich_transport(world,province_rows)
     WORLD_PATH.write_text(json.dumps(world,ensure_ascii=False,separators=(',',':')),encoding='utf-8');SERVER_WORLD_PATH.write_text(WORLD_PATH.read_text(encoding='utf-8'),encoding='utf-8')
@@ -539,7 +642,7 @@ def main():
         'version':2,'regions':total_regions,'provinceGeometryRows':len(province_rows),
         'elevationReal':elev_ok,'landCoverReal':cover_ok,'elevationSamples':elev_samples,'landCoverSamples':cover_samples,'rasterSamplesTarget':RASTER_SAMPLES,
         'elevationSource':'Copernicus DEM GLO-90 (90 m DSM)','landCoverSource':'ESA WorldCover 2021 v200 (10 m)',
-        'transportSource':transport['source'],'transportRelease':OVERTURE_RELEASE if transport['source']=='overture' else None,'transportZoom':TRANSPORT_ZOOM if transport['source']=='overture' else None,
+        'transportSource':transport['source'],'transportRelease':RESOLVED_OVERTURE_RELEASE if transport['source']=='overture' else None,'transportZoom':TRANSPORT_ZOOM if transport['source']=='overture' else None,
         'transportRealRegions':transport['regions'],'transportTiles':transport['tiles'],'transportFeatures':transport['features'],'transportLines':transport['renderLines'],'strategicRoadKm':transport['roadKm'],'strategicRailKm':transport['railKm'],
         'transportNetworkDefinition':'motorway + trunk + primary + secondary + rail; local/residential streets are intentionally excluded from the mobile strategic layer',
         'samplingNote':'Elevation and land cover aggregate deterministic multi-point samples inside each Admin-1 polygon. They use real rasters but are not a full per-pixel province survey.',
