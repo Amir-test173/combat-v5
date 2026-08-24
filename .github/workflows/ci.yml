@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# A newer commit makes an older world-generation run useless. Cancel it instead of
+# spending another ~18 minutes on stale Elevation / WorldCover / Overture data.
+concurrency:
+  group: world-dominion-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FLUTTER_VERSION: '3.47.1'
   NODE_VERSION: '22'
@@ -33,8 +39,27 @@ jobs:
         working-directory: server
         run: npm run check
 
-  android-apk-and-server-data:
+  # Fast gate: catch Dart/compiler/test regressions BEFORE generating the physical world.
+  # Info-level style lints remain visible in the log, while warnings/errors still fail CI.
+  flutter-fast-check:
     needs: source-and-server-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Flutter pub get
+        run: flutter pub get
+      - name: Flutter analyze - errors and warnings are fatal, infos are reported
+        run: flutter analyze --no-fatal-infos
+      - name: Flutter tests
+        run: flutter test
+
+  android-apk-and-server-data:
+    needs: [source-and-server-check, flutter-fast-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -110,12 +135,10 @@ jobs:
           cp GAMEPLAY_V18_AR.md DATA_SOURCES.md /tmp/world-dominion-server-v181/
           cd /tmp && zip -qr world-dominion-server-v1.8.1-generated-data.zip world-dominion-server-v181
 
-      - name: Flutter pub get
+      # Fresh runner: pub get is still needed here before the release build, but analyze/test
+      # already passed in flutter-fast-check so we do not discover Dart failures after 18 min.
+      - name: Flutter pub get for release build
         run: flutter pub get
-      - name: Flutter analyze
-        run: flutter analyze
-      - name: Flutter tests
-        run: flutter test
       - name: Build release APK
         env:
           DEFAULT_SERVER_URL: ${{ vars.DEFAULT_SERVER_URL }}
