@@ -71,6 +71,11 @@ jobs:
       - name: Verify source was not auto-repaired
         run: python tool/check_clean_source.py
 
+      # Preflight uses the same module as the full enrichment. Install its Python/GIS
+      # dependencies first so the probe reaches Overture instead of failing on imports.
+      - name: Install physical geodata tools
+        run: python -m pip install --disable-pip-version-check rasterio shapely pyproj requests pmtiles==3.7.0 mapbox-vector-tile==2.2.0 zstandard
+
       - name: Preflight real Overture transport source
         env:
           WD_REQUIRE_REAL_TRANSPORT: '1'
@@ -82,8 +87,6 @@ jobs:
 
       - name: Build full world administrative dataset
         run: python tool/fetch_world_data.py
-      - name: Install physical geodata tools
-        run: python -m pip install --disable-pip-version-check rasterio shapely pyproj requests pmtiles==3.7.0 mapbox-vector-tile==2.2.0 zstandard
       - name: Unit-test strategic transport pipeline
         run: cd tool && python -m unittest -v test_transport_pipeline.py
       - name: Enrich real elevation, land cover and Overture transport
