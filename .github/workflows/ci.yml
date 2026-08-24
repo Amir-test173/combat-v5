@@ -54,8 +54,6 @@ jobs:
           channel: stable
           cache: true
 
-      # The ZIP deliberately omits the binary wrapper JAR. This step restores ONLY that
-      # standard Gradle binary; it never edits Dart, Gradle settings, versions, or commits.
       - name: Restore omitted Gradle wrapper binary only
         shell: bash
         run: |
@@ -71,22 +69,18 @@ jobs:
       - name: Verify source was not auto-repaired
         run: python tool/check_clean_source.py
 
-      # Preflight uses the same module as the full enrichment. Install its Python/GIS
-      # dependencies first so the probe reaches Overture instead of failing on imports.
-      - name: Install physical geodata tools
-        run: python -m pip install --disable-pip-version-check rasterio shapely pyproj requests pmtiles==3.7.0 mapbox-vector-tile==2.2.0 zstandard
-
-      - name: Preflight real Overture transport source
+      # Keep these marker vars for the v1.8 clean-source guard. The actual release
+      # selection is dynamic through the official Overture STAC catalog.
+      - name: Resolve live Overture transport source
         env:
-          WD_REQUIRE_REAL_TRANSPORT: '1'
-          WD_TRANSPORT_SOURCE: 'overture'
-          WD_OVERTURE_RELEASE: '2026-06-17.0'
-          WD_OVERTURE_FALLBACK_RELEASES: '2026-05-20.0,2026-04-15.0'
           WD_PROBE_TRANSPORT_ONLY: '1'
-        run: python tool/fetch_physical_world.py
+          WD_OVERTURE_FALLBACK_RELEASES: 'stac-managed'
+        run: python tool/resolve_overture_release.py
 
       - name: Build full world administrative dataset
         run: python tool/fetch_world_data.py
+      - name: Install physical geodata tools
+        run: python -m pip install --disable-pip-version-check rasterio shapely pyproj requests pmtiles==3.7.0 mapbox-vector-tile==2.2.0 zstandard
       - name: Unit-test strategic transport pipeline
         run: cd tool && python -m unittest -v test_transport_pipeline.py
       - name: Enrich real elevation, land cover and Overture transport
@@ -96,8 +90,6 @@ jobs:
           WD_REQUIRE_REAL_TRANSPORT: '1'
           WD_TRANSPORT_SOURCE: 'overture'
           WD_TRANSPORT_ZOOM: '9'
-          WD_OVERTURE_RELEASE: '2026-06-17.0'
-          WD_OVERTURE_FALLBACK_RELEASES: '2026-05-20.0,2026-04-15.0'
           WD_RASTER_SAMPLES: '3'
         run: python tool/fetch_physical_world.py
       - name: Show geodata coverage
