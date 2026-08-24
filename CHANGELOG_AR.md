@@ -1,3 +1,10 @@
+# v1.8.1 Clean Build Hotfix
+- إصلاح فشل GitHub Actions عند غياب PMTiles الخاصة بإصدار Overture المطلوب: فحص مبكر + fallback إلى إصدار Overture حقيقي سابق ومثبت بدل Natural Earth.
+- الفحص يحدث قبل Elevation/WorldCover حتى لا تضيع ~16 دقيقة قبل اكتشاف 404.
+- إضافة retries لطلبات HTTP Range وتسجيل إصدار Transportation الفعلي في geodata_manifest.json.
+- تحديث GitHub Actions إلى إصدارات Node 24 الحديثة لتقليل تحذيرات Node 20.
+- Protocol 9 وRuleset `1.8.0-parity-1` لم يتغيرا لأن هذا إصلاح Build/Pipeline فقط.
+
 # v1.8 Clean Build & Mode Parity
 - Protocol 9 + Ruleset `1.8.0-parity-1`.
 - تثبيت إصلاحات Dart المذكورة في تقرير البناء داخل `lib/main.dart` نفسه بدل auto-patch في CI.

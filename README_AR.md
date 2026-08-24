@@ -1,6 +1,6 @@
-# World Dominion v1.8 Clean Build & Mode Parity
+# World Dominion v1.8.1 Clean Build & Mode Parity Hotfix
 
-الإصدار: **v1.8.0 / Protocol 9 / Ruleset 1.8.0-parity-1**.
+الإصدار: **v1.8.1 / Protocol 9 / Ruleset 1.8.0-parity-1**.
 
 v1.8 يبني فوق v1.7 Physical World دون إزالة أنظمة اللعب. الأولوية في هذا الإصدار هي تثبيت المصدر ليبنى نظيفًا، ومنع انجراف قواعد اللعب بين Offline وOnline.
 
@@ -41,3 +41,7 @@ Workflow الرئيسي: **Build World Dominion Clean Build & Parity**.
 استخدم تطبيق **v1.8 / Protocol 9 / Ruleset 1.8.0-parity-1** مع سيرفر مطابق فقط. السيرفر يرفض Protocol أو Ruleset غير المتوافق.
 
 راجع `GAMEPLAY_V18_AR.md`, `PRESERVATION_V18_AR.md`, `DATA_SOURCES.md`, و`TEST_NOTES_AR.md`.
+
+
+## v1.8.1 — Overture build hotfix
+عند غياب PMTiles لإصدار Overture المثبت، يفحص CI المصدر قبل العمل المكلف ويستخدم إصدارًا حقيقيًا سابقًا ومثبتًا (حاليًا 2026-05-20.0 ثم 2026-04-15.0) بدل التحول إلى Natural Earth. يسجل manifest الإصدار الفعلي المستخدم.

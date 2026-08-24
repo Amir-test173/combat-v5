@@ -1,7 +1,7 @@
 name: world_dominion
 publish_to: 'none'
 description: Strategic world conquest game with authoritative multiplayer, economy, diplomacy and field warfare.
-version: 1.8.0+180
+version: 1.8.1+181
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
