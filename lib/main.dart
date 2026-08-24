@@ -9,7 +9,7 @@ import 'package:countries_world_map/countries_world_map.dart';
 import 'package:countries_world_map/data/maps/world_map.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const kAppVersion='1.8.0-clean-build-parity';
+const kAppVersion='1.8.1-clean-build-parity-hotfix';
 const kProtocolVersion=9;
 const kRulesetVersion='1.8.0-parity-1';
 const kDefaultServerUrl=String.fromEnvironment('DEFAULT_SERVER_URL',defaultValue:'');

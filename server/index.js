@@ -11,7 +11,7 @@ import { snapshotForObserver } from './fog_rules.js';
 import { provinceBattleEnvironment, infrastructureCapacity, movementCostProfile, haversineKm, airRangeKm, missileRangeKm, missileInterceptChance, ewEffect, nextWeather } from './advanced_rules.js';
 import { SEA_ZONES, seaZonesForCountry, zoneAdjacent, taskForcePower, navalCombatRound, missileTypeSpec, typedMissileRangeKm, layeredInterceptChance, missileDamage, airDefensePenetration } from './naval_rules.js';
 
-const VERSION='1.8.0-clean-build-parity';
+const VERSION='1.8.1-clean-build-parity-hotfix';
 const PROTOCOL_VERSION=9;
 const RULESET_VERSION='1.8.0-parity-1';
 const MIN_PLAYERS_TO_START=Number(process.env.MIN_PLAYERS_TO_START||2);

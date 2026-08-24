@@ -1,6 +1,6 @@
 {
   "name": "world-dominion-server",
-  "version": "1.8.0-clean-build-parity",
+  "version": "1.8.1-clean-build-parity-hotfix",
   "private": true,
   "type": "module",
   "engines": {
