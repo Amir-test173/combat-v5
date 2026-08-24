@@ -1,0 +1,138 @@
+name: Build World Dominion Clean Build & Parity
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.1'
+  NODE_VERSION: '22'
+  JAVA_VERSION: '17'
+
+jobs:
+  source-and-server-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify clean source and parity contract
+        run: python tool/check_clean_source.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install server dependencies
+        working-directory: server
+        run: npm install --no-audit --no-fund
+      - name: Server syntax and tests
+        working-directory: server
+        run: npm run check
+
+  android-apk-and-server-data:
+    needs: source-and-server-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # The ZIP deliberately omits the binary wrapper JAR. This step restores ONLY that
+      # standard Gradle binary; it never edits Dart, Gradle settings, versions, or commits.
+      - name: Restore omitted Gradle wrapper binary only
+        shell: bash
+        run: |
+          test -f android/gradlew
+          test -f android/gradle/wrapper/gradle-wrapper.properties
+          if [ ! -f android/gradle/wrapper/gradle-wrapper.jar ]; then
+            flutter create /tmp/wd_scaffold --platforms=android --project-name world_dominion --org com.worlddominion
+            cp /tmp/wd_scaffold/android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.jar
+          fi
+          chmod +x android/gradlew
+          grep -q 'gradle-8.14.3-bin.zip' android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Verify source was not auto-repaired
+        run: python tool/check_clean_source.py
+
+      - name: Build full world administrative dataset
+        run: python tool/fetch_world_data.py
+      - name: Install physical geodata tools
+        run: python -m pip install --disable-pip-version-check rasterio shapely pyproj requests pmtiles==3.7.0 mapbox-vector-tile==2.2.0 zstandard
+      - name: Unit-test strategic transport pipeline
+        run: cd tool && python -m unittest -v test_transport_pipeline.py
+      - name: Enrich real elevation, land cover and Overture transport
+        env:
+          WD_GEO_WORKERS: '8'
+          WD_REQUIRE_REAL_GEO: '1'
+          WD_REQUIRE_REAL_TRANSPORT: '1'
+          WD_TRANSPORT_SOURCE: 'overture'
+          WD_TRANSPORT_ZOOM: '9'
+          WD_OVERTURE_RELEASE: '2026-06-17.0'
+          WD_RASTER_SAMPLES: '3'
+        run: python tool/fetch_physical_world.py
+      - name: Show geodata coverage
+        run: cat assets/geodata_manifest.json
+
+      - name: Verify authoritative server against enriched world data
+        working-directory: server
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+
+      - name: Package matching generated-data server
+        shell: bash
+        run: |
+          rm -rf /tmp/world-dominion-server-v18
+          mkdir -p /tmp/world-dominion-server-v18
+          cp -a server/. /tmp/world-dominion-server-v18/
+          cp GAMEPLAY_V18_AR.md DATA_SOURCES.md /tmp/world-dominion-server-v18/
+          cd /tmp && zip -qr world-dominion-server-v1.8-generated-data.zip world-dominion-server-v18
+
+      - name: Flutter pub get
+        run: flutter pub get
+      - name: Flutter analyze
+        run: flutter analyze
+      - name: Flutter tests
+        run: flutter test
+      - name: Build release APK
+        env:
+          DEFAULT_SERVER_URL: ${{ vars.DEFAULT_SERVER_URL }}
+          PRIVACY_POLICY_URL: ${{ vars.PRIVACY_POLICY_URL }}
+          SUPPORT_EMAIL: ${{ vars.SUPPORT_EMAIL }}
+        run: >-
+          flutter build apk --release
+          --dart-define=DEFAULT_SERVER_URL="$DEFAULT_SERVER_URL"
+          --dart-define=PRIVACY_POLICY_URL="$PRIVACY_POLICY_URL"
+          --dart-define=SUPPORT_EMAIL="$SUPPORT_EMAIL"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-dominion-1.8.0-clean-build-parity-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload matching enriched server bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: world-dominion-1.8.0-clean-build-parity-server
+          path: /tmp/world-dominion-server-v1.8-generated-data.zip
+          if-no-files-found: error
+          retention-days: 30
