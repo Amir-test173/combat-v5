@@ -310,6 +310,24 @@ class GameState extends ChangeNotifier {
   String _allianceKey(String a,String b){final xs=[a,b]..sort();return xs.join('|');}
   bool areAllies(String a,String b){final ca=countries[a],cb=countries[b];final ra=ca==null?a:controllerRoot(ca.controller),rb=cb==null?b:controllerRoot(cb.controller);return ra!=rb&&alliances.contains(_allianceKey(ra,rb));}
   bool isOccupied(Country c)=>(c.controller.startsWith('P:')||c.controller.startsWith('AI:'))&&controllerRoot(c.controller)!=c.id;
+  Country? controllerBase(String controller){final root=controllerRoot(controller);final preferred=countries[root];if(preferred?.controller==controller)return preferred;for(final c in countries.values){if(c.controller==controller)return c;}return null;}
+  Future<void> choose(String id) async {
+    final country=countries[id];if(country==null)return;
+    if(multiplayer?.isConnected==true){final ok=await multiplayer!.claimCountry(id);if(!ok){_log('لا يمكن اختيار ${country.name}: اختارها لاعب آخر في هذه الغرفة.');return;}}
+    humanCountry=id;winnerController=null;selected=id;country.controller='P:$id';logs.insert(0,'بدأت اللعب بـ ${country.name}.');_sync();notifyListeners();
+  }
+  bool isCountryTaken(String id){if(multiplayer?.isConnected!=true)return false;final owner=onlineCountryOwners[id];return owner!=null&&owner!=multiplayer!.playerId;}
+  void select(String id){if(!countries.containsKey(id))return;selected=id;notifyListeners();}
+  bool isMine(String id)=>humanCountry!=null&&countries[id]?.controller=='P:$humanCountry';
+  bool isSeaLane(String a,String b)=>((kSeaLanes[a]??const <String>[]).contains(b)||(coastalCountries.contains(a)&&coastalCountries.contains(b)&&!(countries[a]?.neighbors.contains(b)??false)));
+  bool _seaSupplyAvailable(String controller,String a,String b){final base=controllerBase(controller),ca=countries[a],cb=countries[b];if(base==null||ca==null||cb==null||ca.controller!=controller||cb.controller!=controller)return false;return base.army.navy>0&&siteFactor(a,'port')>.25&&siteFactor(b,'port')>.25;}
+  Iterable<String> _supplyNeighbors(String controller,String id) sync*{for(final n in countries[id]?.neighbors??const <String>[]){yield n;}for(final n in countries.keys.where((x)=>x!=id&&isSeaLane(id,x))){if(_seaSupplyAvailable(controller,id,n))yield n;}}
+  bool isSupplyConnected(String countryId){
+    if(humanCountry==null)return false;final controller='P:$humanCountry';if(countries[countryId]?.controller!=controller)return false;final root=me.id;if(countryId==root)return true;final seen=<String>{root};final queue=<String>[root];while(queue.isNotEmpty){final cur=queue.removeAt(0);for(final n in _supplyNeighbors(controller,cur)){if(seen.contains(n)||countries[n]?.controller!=controller)continue;if(n==countryId)return true;seen.add(n);queue.add(n);}}return false;
+  }
+  double supplyLineFactor(String countryId)=>isSupplyConnected(countryId)?1.0:(.58+me.techLogistics*.035).clamp(.58,.78).toDouble();
+  int get commandCap=>(gamePace=='rapid'?8:gamePace=='grand'?5:6)+me.techLogistics;
+  double get aiMultiplier=>aiDifficulty=='hard'?1.18:aiDifficulty=='easy'?0.86:1.0;
   String tr(String ar,String en)=>appLanguage=='en'?en:ar;
   String countryDisplayName(Country c)=>appLanguage=='en'?(countryNamesEn[c.id]??c.id):c.name;
   void setLanguage(String value){if(value!='ar'&&value!='en')return;appLanguage=value;notifyListeners();}
